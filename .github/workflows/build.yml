@@ -1,0 +1,113 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Build
+      shell: bash
+      run: |
+        # Configure git to be more predictable and deterministic
+        git config core.autocrlf false
+        git config core.ignorecase false
+        git config core.fscache true
+        git config core.longpaths true
+        git config diff.renameLimit 0
+        git config status.renameLimit 0
+        git config merge.renameLimit 0
+        git config http.lowSpeedLimit 0
+        git config http.lowSpeedTime 300
+        git config http.postBuffer 1048576000
+        git config pack.threads 1
+        git config index.threads 0
+        
+        # Check Cheerio version on npm
+        export cheerio_version=$(curl -sS 'https://registry.npmjs.org/cheerio' | python -c "import sys, json; print(json.load(sys.stdin)['dist-tags']['latest'])")
+        if [ -f "package.json" ] && [ $cheerio_version == $(cat package.json | python -c "import sys, json; print(json.load(sys.stdin)['version'])") ]; then
+            exit 0
+        fi
+        
+        # Roll back the repository
+        git reset --hard $(git rev-list --max-parents=0 HEAD)
+        git clean -dffx
+        
+        # Install using npm 6
+        # Later versions fail to create a sane dependency tree in some situations
+        export npm_version=$(curl -sS 'https://registry.npmjs.org/npm' | python -c "import sys, json; print(json.load(sys.stdin)['dist-tags']['latest-6'])")
+        wget -nv -O "npm-$npm_version.tgz" "https://registry.npmjs.org/npm/-/npm-$npm_version.tgz"
+        mkdir -p "bin/npm"
+        tar -xzf "npm-$npm_version.tgz" --strip-components=1 -C "bin/npm"
+        rm "npm-$npm_version.tgz"
+        
+        # Initialize dummy package
+        node bin/npm/bin/npm-cli.js init -y
+        sed -i 's/"name": "cheerio"/"name": "npm"/' -- 'package.json'
+        
+        # Install Cheerio as a dependency
+        node bin/npm/bin/npm-cli.js install --no-audit --no-bin-links --no-fund --ignore-scripts --no-optional "cheerio@$cheerio_version"
+        
+        # Modify package.json to match the Cheerio tarball from npm
+        cat << 'EOF' > script.js
+        const fs = require('fs')
+        const pkg = require('./node_modules/cheerio/package.json')
+        const obj = {}
+        if(pkg.author.name === 'Matt Mueller' && pkg.author.email === 'mattmuelle@gmail.com') pkg.author = 'Matt Mueller <mattmuelle@gmail.com>'
+        if(pkg.maintainers.length === 1 && pkg.maintainers[0].name === 'Felix Boehm' && pkg.maintainers[0].email === 'me@feedic.com') pkg.maintainers = ['Felix Boehm <me@feedic.com>']
+        pkg.dependencies['lodash.isarraylike'] = '^4.2.0'
+        pkg.dependencies = Object.keys(pkg.dependencies).sort().reduce((d, v) => (d[v] = pkg.dependencies[v], d), {})
+        pkg.devDependencies['@types/lodash.isarraylike'] = '^4.2.6'
+        pkg.devDependencies = Object.keys(pkg.devDependencies).sort().reduce((d, v) => (d[v] = pkg.devDependencies[v], d), {})
+        obj.name = pkg.name
+        obj.version = pkg.version
+        obj.description = pkg.description
+        obj.author = pkg.author
+        obj.maintainers = pkg.maintainers
+        obj.license = pkg.license
+        obj.keywords = pkg.keywords
+        obj.repository = pkg.repository
+        obj.bugs = pkg.bugs
+        obj.homepage = pkg.homepage
+        obj.main = pkg.main
+        obj.types = pkg.types
+        obj.module = pkg.module
+        obj.exports = pkg.exports
+        obj.engines = pkg.engines
+        obj.dependencies = pkg.dependencies
+        fs.writeFileSync('./node_modules/cheerio/package.json', JSON.stringify(obj, null, 2) + '\n', 'utf-8')
+        EOF
+        node --use_strict script.js
+        rm script.js
+        
+        # Remove npm
+        rm -r bin/
+        rm package.json
+        rm package-lock.json
+        
+        # Patch isArrayLike function
+        sed -i -z 's/\nfunction isArrayLike(item) {\n.*\n}/\nfunction isArrayLike(item) {\n    var _isArrayLike = require('\''lodash.isarraylike'\'');\n    return _isArrayLike(item);\n}/' -- 'node_modules/cheerio/lib/static.js'
+        sed -i -z 's/\nfunction isArrayLike(item) {\n.*\n}/\nfunction isArrayLike(item) {\n    import _isArrayLike from '\''lodash.isarraylike'\'';\n    return _isArrayLike(item);\n}/' -- 'node_modules/cheerio/lib/esm/static.js'
+        
+        # Readme
+        sed -i -z 's/\n<!-- BEGIN SPONSORS: sponsor -->.*<!-- END SPONSORS -->\n//' -- 'node_modules/cheerio/Readme.md'
+        sed -i -z 's/\n<!-- BEGIN SPONSORS: backer -->.*<!-- END SPONSORS -->\n//' -- 'node_modules/cheerio/Readme.md'
+        
+        # Add Cheerio to the repository
+        rsync -avv --exclude='node_modules/' node_modules/cheerio/ .
+        rm -r node_modules/
+        git add -f .
+        
+        # Push to GitHub
+        git -c user.name="GitHub" -c user.email="noreply@github.com" commit --author="github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>" -m"$cheerio_version" | sed -n 1p
+        git tag -f "$cheerio_version"
+        git push --force
+        git push -f origin "refs/tags/$cheerio_version:refs/tags/$cheerio_version"
