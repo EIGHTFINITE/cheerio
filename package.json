@@ -1,0 +1,56 @@
+{
+  "name": "cheerio",
+  "version": "1.0.0-rc.12",
+  "description": "Tiny, fast, and elegant implementation of core jQuery designed specifically for the server",
+  "author": "Matt Mueller <mattmuelle@gmail.com>",
+  "maintainers": [
+    "Felix Boehm <me@feedic.com>"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "htmlparser",
+    "jquery",
+    "selector",
+    "scraper",
+    "parser",
+    "html"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/cheeriojs/cheerio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cheeriojs/cheerio/issues"
+  },
+  "homepage": "https://cheerio.js.org/",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "module": "lib/esm/index.js",
+  "exports": {
+    ".": {
+      "require": "./lib/index.js",
+      "import": "./lib/esm/index.js"
+    },
+    "./lib/slim": {
+      "require": "./lib/slim.js",
+      "import": "./lib/esm/slim.js"
+    },
+    "./lib/utils": {
+      "require": "./lib/utils.js",
+      "import": "./lib/esm/utils.js"
+    }
+  },
+  "engines": {
+    "node": ">= 6"
+  },
+  "dependencies": {
+    "cheerio-select": "^2.1.0",
+    "dom-serializer": "^2.0.0",
+    "domhandler": "^5.0.3",
+    "domutils": "^3.0.1",
+    "htmlparser2": "^8.0.1",
+    "lodash.isarraylike": "^4.2.0",
+    "parse5": "^7.0.0",
+    "parse5-htmlparser2-tree-adapter": "^7.0.0"
+  }
+}
